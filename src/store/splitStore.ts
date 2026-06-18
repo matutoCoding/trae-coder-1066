@@ -19,6 +19,7 @@ interface SplitState {
   getSplitRecordsByParent: (parentId: string) => SplitRecord[];
   getSplitRecordsByTarget: (targetType: SplitTargetType, targetId: string) => SplitRecord[];
   getSplitTree: (batchId: string) => SplitRecord[];
+  getChildSplits: (parentId: string) => SplitRecord[];
   getDestinationDistribution: (batchId: string) => { name: string; value: number; type: string }[];
   getTotalDistributed: (batchId: string) => number;
 }
@@ -118,6 +119,10 @@ export const useSplitStore = create<SplitState>()(
         return get().splitRecords.filter((s) => s.batchId === batchId);
       },
 
+      getChildSplits: (parentId) => {
+        return get().splitRecords.filter((s) => s.parentSplitId === parentId);
+      },
+
       getDestinationDistribution: (batchId) => {
         const records = get().getSplitRecordsByBatch(batchId);
         const distribution: { [key: string]: { name: string; value: number; type: string } } = {};
@@ -210,7 +215,8 @@ export const useSplitStore = create<SplitState>()(
 
       getTotalDistributed: (batchId) => {
         const records = get().getSplitRecordsByBatch(batchId);
-        return records.reduce((sum, r) => sum + (r.quantity - r.remainQuantity), 0);
+        const rootSplits = records.filter((r) => !r.parentSplitId);
+        return rootSplits.reduce((sum, r) => sum + r.quantity, 0);
       },
     }),
     {

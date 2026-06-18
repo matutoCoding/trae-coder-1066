@@ -13,11 +13,13 @@ import {
   Box,
   TrendingDown,
   CheckCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useBatchStore } from '../store/batchStore';
 import { useSplitStore } from '../store/splitStore';
 import { useWindowStore } from '../store/windowStore';
+import { useOperationStore } from '../store/operationStore';
 import type { SplitRecord, SplitTargetType } from '../types';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
@@ -30,8 +32,12 @@ const SplitPage = () => {
     getSplitRecordsByBatch,
     getSplitRecordsByParent,
     getDestinationDistribution,
+    getTotalDistributed,
   } = useSplitStore();
   const { windows } = useWindowStore();
+  const { checkStockWarnings, appConfig } = useOperationStore();
+
+  const stockWarnings = checkStockWarnings();
 
   const [selectedBatchId, setSelectedBatchId] = useState(batches[0]?.id || '');
   const [showSplitModal, setShowSplitModal] = useState(false);
@@ -51,11 +57,7 @@ const SplitPage = () => {
   const batchSplitRecords = getSplitRecordsByBatch(selectedBatchId);
   const topLevelSplits = batchSplitRecords.filter((r) => !r.parentSplitId);
   const distributionData = getDestinationDistribution(selectedBatchId);
-
-  const totalDistributed = batchSplitRecords.reduce(
-    (sum, r) => sum + (r.quantity - r.remainQuantity),
-    0
-  );
+  const totalDistributed = getTotalDistributed(selectedBatchId);
 
   const toggleNode = (id: string) => {
     const newExpanded = new Set(expandedNodes);
@@ -235,6 +237,52 @@ const SplitPage = () => {
 
   return (
     <div className="space-y-6">
+      {stockWarnings.length > 0 && (
+        <motion.div
+          initial={{ y: -20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className={`rounded-2xl p-4 flex items-center gap-3 ${
+            stockWarnings.some((w) => w.level === 'critical')
+              ? 'bg-red-50 border border-red-200'
+              : 'bg-amber-50 border border-amber-200'
+          }`}
+        >
+          <AlertTriangle
+            className={`w-6 h-6 ${
+              stockWarnings.some((w) => w.level === 'critical')
+                ? 'text-red-500'
+                : 'text-amber-500'
+            }`}
+          />
+          <div className="flex-1">
+            <p
+              className={`font-bold ${
+                stockWarnings.some((w) => w.level === 'critical')
+                  ? 'text-red-700'
+                  : 'text-amber-700'
+              }`}
+            >
+              试管库存预警
+            </p>
+            <p
+              className={`text-sm ${
+                stockWarnings.some((w) => w.level === 'critical')
+                  ? 'text-red-600'
+                  : 'text-amber-600'
+              }`}
+            >
+              {stockWarnings
+                .map((w) => {
+                  const win = windows.find((win) => win.id === w.windowId);
+                  return `${win?.name || w.windowId}${w.level === 'critical' ? '(危急)' : ''}`;
+                })
+                .join('、')}
+              试管库存不足，请尽快补充
+            </p>
+          </div>
+        </motion.div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <motion.div
           initial={{ y: 20, opacity: 0 }}
@@ -503,10 +551,12 @@ const SplitPage = () => {
                                 className={`text-xs px-2 py-0.5 rounded-full ${
                                   item.type === 'window'
                                     ? 'bg-blue-100 text-blue-600'
-                                    : 'bg-purple-100 text-purple-600'
+                                    : item.type === 'sub_split'
+                                      ? 'bg-purple-100 text-purple-600'
+                                      : 'bg-amber-100 text-amber-600'
                                 }`}
                               >
-                                {item.type === 'window' ? '窗口' : '护士'}
+                                {item.type === 'window' ? '窗口' : item.type === 'sub_split' ? '子批次' : '护士'}
                               </span>
                             </div>
                             <span className="font-bold text-gray-800">

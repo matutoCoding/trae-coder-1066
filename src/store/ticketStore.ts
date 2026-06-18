@@ -5,6 +5,7 @@ import { mockTickets, createTicket as createMockTicket } from '../data/mockData'
 import { getOptimalWindow } from '../utils/loadBalancer';
 import { useWindowStore } from './windowStore';
 import { useSplitStore } from './splitStore';
+import { recordOperation } from './operationStore';
 
 interface TicketState {
   tickets: Ticket[];
@@ -52,6 +53,13 @@ export const useTicketStore = create<TicketState>()(
 
         useWindowStore.getState().updateQueueLength(targetWindowId, 1);
 
+        recordOperation.createTicket(
+          newTicket.id,
+          newTicket.number,
+          newTicket.patientName,
+          newTicket.windowId
+        );
+
         return newTicket;
       },
 
@@ -93,6 +101,13 @@ export const useTicketStore = create<TicketState>()(
         useWindowStore.getState().setCurrentTicket(windowId, nextTicket.id);
         useWindowStore.getState().updateQueueLength(windowId, -1);
 
+        recordOperation.callTicket(
+          nextTicket.id,
+          nextTicket.number,
+          nextTicket.patientName,
+          windowId
+        );
+
         return { ...nextTicket, status: 'calling' as const, callTime: now };
       },
 
@@ -128,6 +143,15 @@ export const useTicketStore = create<TicketState>()(
               : t
           ),
         }));
+
+        if (ticket) {
+          recordOperation.completeTicket(
+            ticket.id,
+            ticket.number,
+            ticket.patientName,
+            ticket.windowId
+          );
+        }
       },
 
       skipTicket: (ticketId) => {
@@ -135,6 +159,13 @@ export const useTicketStore = create<TicketState>()(
         if (ticket) {
           useWindowStore.getState().setCurrentTicket(ticket.windowId, undefined);
           useWindowStore.getState().updateQueueLength(ticket.windowId, 0);
+
+          recordOperation.skipTicket(
+            ticket.id,
+            ticket.number,
+            ticket.patientName,
+            ticket.windowId
+          );
         }
 
         set((state) => ({
@@ -179,6 +210,17 @@ export const useTicketStore = create<TicketState>()(
               : t
           ),
         }));
+
+        if (ticket) {
+          recordOperation.bindTube(
+            ticket.id,
+            ticket.number,
+            ticket.patientName,
+            ticket.windowId,
+            barcode,
+            batchNo
+          );
+        }
       },
 
       recalculateQueueLengths: () => {
@@ -213,6 +255,9 @@ export const useTicketStore = create<TicketState>()(
         const ticket = get().tickets.find((t) => t.id === ticketId);
         if (!ticket || ticket.status !== 'waiting') return;
 
+        const fromWindow = useWindowStore.getState().getWindowById(ticket.windowId);
+        const toWindow = useWindowStore.getState().getWindowById(toWindowId);
+
         useWindowStore.getState().updateQueueLength(ticket.windowId, -1);
         useWindowStore.getState().updateQueueLength(toWindowId, 1);
 
@@ -221,6 +266,18 @@ export const useTicketStore = create<TicketState>()(
             t.id === ticketId ? { ...t, windowId: toWindowId } : t
           ),
         }));
+
+        if (fromWindow && toWindow) {
+          recordOperation.transferTicket(
+            ticket.id,
+            ticket.number,
+            ticket.patientName,
+            ticket.windowId,
+            toWindowId,
+            fromWindow.name,
+            toWindow.name
+          );
+        }
       },
 
       resetTickets: () => {

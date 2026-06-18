@@ -88,3 +88,45 @@ export interface LoadBalanceResult {
   score: number;
   reason: string;
 }
+
+export type OperationType =
+  | 'create'
+  | 'call'
+  | 'bind_tube'
+  | 'complete'
+  | 'skip'
+  | 'transfer'
+  | 'window_open'
+  | 'window_close';
+
+export interface OperationRecord {
+  id: string;
+  ticketId?: string;
+  ticketNumber?: number;
+  patientName?: string;
+  windowId: string;
+  windowName: string;
+  type: OperationType;
+  description: string;
+  details?: Record<string, unknown>;
+  operator: string;
+  timestamp: string;
+}
+
+export interface StockWarning {
+  id: string;
+  windowId: string;
+  windowName: string;
+  batchId: string;
+  batchNo: string;
+  tubeType: string;
+  remainQuantity: number;
+  threshold: number;
+  level: 'low' | 'critical';
+  timestamp: string;
+}
+
+export interface AppConfig {
+  stockThreshold: number;
+  criticalThreshold: number;
+}

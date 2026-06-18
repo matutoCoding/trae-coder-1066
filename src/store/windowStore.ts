@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Window } from '../types';
 import { mockWindows } from '../data/mockData';
+import { recordOperation } from './operationStore';
 
 interface WindowState {
   windows: Window[];
@@ -58,6 +59,9 @@ export const useWindowStore = create<WindowState>()(
       },
 
       toggleWindowStatus: (id) => {
+        const currentWindow = get().windows.find((w) => w.id === id);
+        const willOpen = currentWindow?.status === 'closed';
+
         set((state) => ({
           windows: state.windows.map((w) =>
             w.id === id
@@ -68,6 +72,12 @@ export const useWindowStore = create<WindowState>()(
               : w
           ),
         }));
+
+        if (willOpen) {
+          recordOperation.windowOpen(id);
+        } else {
+          recordOperation.windowClose(id);
+        }
       },
 
       getAllOpenWindows: () => {

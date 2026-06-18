@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Package,
@@ -12,10 +12,21 @@ import {
   FileText,
   ArrowRight,
   Filter,
+  GitBranch,
+  Users,
+  TestTube,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  User,
+  Barcode,
+  TrendingDown,
 } from 'lucide-react';
 import { useBatchStore } from '../store/batchStore';
 import { useSplitStore } from '../store/splitStore';
-import type { Batch } from '../types';
+import { useTicketStore } from '../store/ticketStore';
+import { useWindowStore } from '../store/windowStore';
+import type { Batch, SplitRecord } from '../types';
 
 const tubeTypes = [
   'EDTA抗凝管',
@@ -28,12 +39,14 @@ const tubeTypes = [
 
 const BatchPage = () => {
   const { batches, addBatch, getBatchStats, getActiveBatches } = useBatchStore();
-  const { getSplitRecordsByBatch, getTotalDistributed } = useSplitStore();
+  const { getSplitRecordsByBatch, getTotalDistributed, getChildSplits } = useSplitStore();
+  const { tickets } = useTicketStore();
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'used' | 'expired'>('all');
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
+  const [expandedSplits, setExpandedSplits] = useState<Set<string>>(new Set());
 
   const [formData, setFormData] = useState({
     batchNo: '',
@@ -74,6 +87,117 @@ const BatchPage = () => {
     used: { label: '已用完', color: 'bg-gray-100 text-gray-600', icon: Package },
     expired: { label: '已过期', color: 'bg-red-100 text-red-700', icon: AlertTriangle },
   };
+
+  const selectedBatchSplits = selectedBatch
+    ? getSplitRecordsByBatch(selectedBatch.id)
+    : [];
+
+  const selectedBatchBoundTickets = selectedBatch
+    ? tickets.filter(
+        (t) => t.tubeBatchNo === selectedBatch.batchNo && t.tubeBarcodes && t.tubeBarcodes.length > 0
+      )
+    : [];
+
+  const toggleSplitExpand = (splitId: string) => {
+    setExpandedSplits((prev) => {
+      const next = new Set(prev);
+      if (next.has(splitId)) {
+        next.delete(splitId);
+      } else {
+        next.add(splitId);
+      }
+      return next;
+    });
+  };
+
+  const renderSplitTree = (splits: SplitRecord[], level: number = 0) => {
+    return splits.map((split) => {
+      const children = getChildSplits(split.id);
+      const hasChildren = children.length > 0;
+      const isExpanded = expandedSplits.has(split.id);
+
+      const targetTypeLabel = {
+        window: '窗口',
+        nurse: '护士',
+        sub_split: '子批次',
+      }[split.targetType];
+
+      const targetTypeColor = {
+        window: 'bg-blue-100 text-blue-700',
+        nurse: 'bg-amber-100 text-amber-700',
+        sub_split: 'bg-purple-100 text-purple-700',
+      }[split.targetType];
+
+      const usagePercent =
+        split.quantity > 0 ? ((split.quantity - split.remainQuantity) / split.quantity) * 100 : 0;
+
+      return (
+        <div key={split.id} style={{ marginLeft: level * 20 }}>
+          <div
+            className={`flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors cursor-pointer ${
+              level > 0 ? 'border-l-2 border-gray-200 ml-3' : ''
+            }`}
+            onClick={() => hasChildren && toggleSplitExpand(split.id)}
+          >
+            {hasChildren ? (
+              isExpanded ? (
+                <ChevronDown className="w-4 h-4 text-gray-400" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              )
+            ) : (
+              <div className="w-4" />
+            )}
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`px-2 py-0.5 rounded text-xs font-medium ${targetTypeColor}`}
+                >
+                  {targetTypeLabel}
+                </span>
+                <span className="font-medium text-gray-800">{split.targetName}</span>
+                {split.level > 0 && (
+                  <span className="text-xs text-gray-400">第{split.level}级拆分</span>
+                )}
+              </div>
+              <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                <span className="flex items-center gap-1">
+                  <Calendar className="w-3 h-3" />
+                  {split.splitTime}
+                </span>
+                <span className="flex items-center gap-1">
+                  <User className="w-3 h-3" />
+                  {split.operator}
+                </span>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="font-bold text-gray-800">
+                {split.remainQuantity} / {split.quantity} 支
+              </div>
+              <div className="mt-1 w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${
+                    usagePercent > 80
+                      ? 'bg-red-400'
+                      : usagePercent > 50
+                        ? 'bg-amber-400'
+                        : 'bg-green-400'
+                  }`}
+                  style={{ width: `${usagePercent}%` }}
+                />
+              </div>
+            </div>
+          </div>
+          {hasChildren && isExpanded && renderSplitTree(children, level + 1)}
+        </div>
+      );
+    });
+  };
+
+  const rootSplits = selectedBatchSplits.filter((s) => !s.parentSplitId);
+  const totalUsed = selectedBatch ? selectedBatch.totalQuantity - selectedBatch.remainQuantity : 0;
+  const totalDistributed = selectedBatch ? getTotalDistributed(selectedBatch.id) : 0;
 
   return (
     <div className="space-y-6">
@@ -221,6 +345,9 @@ const BatchPage = () => {
                   ((batch.totalQuantity - batch.remainQuantity) / batch.totalQuantity) * 100;
                 const splitRecords = getSplitRecordsByBatch(batch.id);
                 const totalDistributed = getTotalDistributed(batch.id);
+                const boundCount = tickets.filter(
+                  (t) => t.tubeBatchNo === batch.batchNo && t.tubeBarcodes && t.tubeBarcodes.length > 0
+                ).length;
 
                 return (
                   <motion.tr
@@ -259,6 +386,9 @@ const BatchPage = () => {
                           }`}
                           style={{ width: `${usagePercent}%` }}
                         />
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        已分发 {totalDistributed} · 已使用 {boundCount}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -460,25 +590,31 @@ const BatchPage = () => {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 300, opacity: 0 }}
               transition={{ type: 'spring', damping: 25 }}
-              className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl max-h-[80vh] overflow-hidden"
+              className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
-                <h3 className="text-lg font-bold text-gray-800">批次详情</h3>
+              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-xl font-bold text-gray-800">{selectedBatch.batchNo}</h3>
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                      statusConfig[selectedBatch.status].color
+                    }`}
+                  >
+                    {React.createElement(statusConfig[selectedBatch.status].icon, { className: 'w-3.5 h-3.5' })}
+                    {statusConfig[selectedBatch.status].label}
+                  </span>
+                </div>
                 <button
                   onClick={() => setSelectedBatch(null)}
                   className="text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-6 h-6" />
                 </button>
               </div>
 
-              <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-sm text-gray-500 mb-1">批次号</p>
-                    <p className="font-bold text-gray-800">{selectedBatch.batchNo}</p>
-                  </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-gray-50 rounded-xl p-4">
                     <p className="text-sm text-gray-500 mb-1">试管类型</p>
                     <p className="font-bold text-gray-800">{selectedBatch.tubeType}</p>
@@ -495,42 +631,172 @@ const BatchPage = () => {
                       {selectedBatch.remainQuantity.toLocaleString()} 支
                     </p>
                   </div>
+                  <div className="bg-amber-50 rounded-xl p-4">
+                    <p className="text-sm text-amber-600 mb-1">已使用</p>
+                    <p className="font-bold text-amber-800">
+                      {selectedBatchBoundTickets.length} 支
+                    </p>
+                  </div>
                 </div>
 
-                <div className="mb-6">
-                  <h4 className="font-bold text-gray-800 mb-3">拆分记录</h4>
-                  <div className="space-y-2">
-                    {getSplitRecordsByBatch(selectedBatch.id).length === 0 ? (
-                      <p className="text-gray-400 text-sm text-center py-8">
-                        暂无拆分记录
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-sm text-gray-500 mb-1">生产日期</p>
+                    <p className="font-bold text-gray-800">{selectedBatch.manufactureDate || '-'}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-sm text-gray-500 mb-1">有效期至</p>
+                    <p className="font-bold text-gray-800">{selectedBatch.expireDate}</p>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-sm text-gray-500 mb-1">供应商</p>
+                      <p className="font-bold text-gray-800">{selectedBatch.supplier || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500 mb-1">入库时间</p>
+                      <p className="font-bold text-gray-800">{selectedBatch.createTime}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500 mb-1">使用进度</p>
+                      <p className="font-bold text-gray-800">
+                        {Math.round(((selectedBatch.totalQuantity - selectedBatch.remainQuantity) / selectedBatch.totalQuantity) * 100)}%
                       </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full"
+                      style={{ width: `${((selectedBatch.totalQuantity - selectedBatch.remainQuantity) / selectedBatch.totalQuantity) * 100}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <GitBranch className="w-5 h-5 text-purple-600" />
+                    <h4 className="font-bold text-gray-800 text-lg">拆分去向</h4>
+                    <span className="text-sm text-gray-500 ml-auto">
+                      共 {totalDistributed} 支已分发
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {rootSplits.length === 0 ? (
+                      <div className="text-center py-8 text-gray-400">
+                        <Package className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                        <p>暂无拆分记录</p>
+                      </div>
                     ) : (
-                      getSplitRecordsByBatch(selectedBatch.id).map((record) => (
-                        <div
-                          key={record.id}
-                          className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
-                        >
-                          <div>
-                            <p className="font-medium text-gray-800">
-                              {record.targetName}
-                            </p>
-                            <p className="text-xs text-gray-400">
-                              {record.splitTime} · {record.operator}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold text-gray-800">
-                              {record.quantity} 支
-                            </p>
-                            <p className="text-xs text-gray-400">
-                              剩余 {record.remainQuantity} 支
-                            </p>
-                          </div>
-                        </div>
-                      ))
+                      renderSplitTree(rootSplits)
                     )}
                   </div>
                 </div>
+
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Users className="w-5 h-5 text-green-600" />
+                    <h4 className="font-bold text-gray-800 text-lg">绑定记录</h4>
+                    <span className="text-sm text-gray-500 ml-auto">
+                      共 {selectedBatchBoundTickets.length} 条记录
+                    </span>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl overflow-hidden">
+                    {selectedBatchBoundTickets.length === 0 ? (
+                      <div className="text-center py-8 text-gray-400">
+                        <TestTube className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                        <p>暂无绑定记录</p>
+                      </div>
+                    ) : (
+                      <div className="max-h-64 overflow-y-auto">
+                        <table className="w-full">
+                          <thead className="bg-gray-100 sticky top-0">
+                            <tr>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                                排队号
+                              </th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                                姓名
+                              </th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                                窗口
+                              </th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                                试管条码
+                              </th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                                状态
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {selectedBatchBoundTickets.map((ticket) => (
+                              <tr key={ticket.id} className="hover:bg-white/50">
+                                <td className="px-4 py-3">
+                                  <span className="font-mono font-bold text-blue-600">
+                                    A{ticket.number}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="text-gray-800">{ticket.patientName}</span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="text-gray-600 text-sm">
+                                    {useWindowStore.getState().getWindowById(ticket.windowId)?.name || ticket.windowId}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex flex-wrap gap-1">
+                                    {ticket.tubeBarcodes?.map((bc, idx) => (
+                                      <span
+                                        key={idx}
+                                        className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-mono"
+                                      >
+                                        {bc}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                      ticket.status === 'completed'
+                                        ? 'bg-green-100 text-green-700'
+                                        : ticket.status === 'calling'
+                                          ? 'bg-blue-100 text-blue-700'
+                                          : ticket.status === 'waiting'
+                                            ? 'bg-gray-100 text-gray-700'
+                                            : 'bg-red-100 text-red-700'
+                                    }`}
+                                  >
+                                    {{
+                                      waiting: '等待中',
+                                      calling: '叫号中',
+                                      processing: '进行中',
+                                      completed: '已完成',
+                                      skipped: '已过号',
+                                    }[ticket.status]}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
+                <button
+                  onClick={() => setSelectedBatch(null)}
+                  className="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                >
+                  关闭
+                </button>
               </div>
             </motion.div>
           </motion.div>

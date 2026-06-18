@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mic,
@@ -14,13 +14,18 @@ import {
   TestTube,
   Barcode,
   Package,
+  AlertTriangle,
+  History,
+  ArrowRight,
+  Calendar,
 } from 'lucide-react';
 import { useWindowStore } from '../store/windowStore';
 import { useTicketStore } from '../store/ticketStore';
 import { useSplitStore } from '../store/splitStore';
 import { useBatchStore } from '../store/batchStore';
+import { useOperationStore } from '../store/operationStore';
 import { getOptimalWindow } from '../utils/loadBalancer';
-import type { Ticket } from '../types';
+import type { Ticket, OperationType } from '../types';
 
 const WorkbenchPage = () => {
   const { windows, selectedWindowId, setSelectedWindowId, getWindowById } = useWindowStore();
@@ -34,6 +39,7 @@ const WorkbenchPage = () => {
   } = useTicketStore();
   const { getSplitRecordsByTarget } = useSplitStore();
   const { getBatchById } = useBatchStore();
+  const { getTicketTimeline, getRecordsByWindow, checkStockWarnings, appConfig } = useOperationStore();
 
   const [isCalling, setIsCalling] = useState(false);
   const [showBindModal, setShowBindModal] = useState(false);
@@ -63,6 +69,24 @@ const WorkbenchPage = () => {
         remainQuantity: s.remainQuantity,
       };
     });
+
+  const stockWarnings = useMemo(() => checkStockWarnings(), [checkStockWarnings]);
+  const currentWindowWarning = stockWarnings.find((w) => w.windowId === selectedWindowId);
+
+  const timeline = useMemo(
+    () => (currentTicket ? getTicketTimeline(currentTicket.id) : []),
+    [currentTicket, getTicketTimeline]
+  );
+
+  const recentRecords = useMemo(
+    () => getRecordsByWindow(selectedWindowId, 10),
+    [selectedWindowId, getRecordsByWindow]
+  );
+
+  const windowTotalRemain = windowSplits.reduce(
+    (sum, s) => sum + s.remainQuantity,
+    0
+  );
 
   const handleCallNext = () => {
     setIsCalling(true);
@@ -113,41 +137,118 @@ const WorkbenchPage = () => {
     idle: { label: '空闲', color: 'bg-blue-500', dotColor: 'bg-blue-400' },
   };
 
+  const operationIcon: Record<OperationType, typeof Clock> = {
+    create: Calendar,
+    call: Mic,
+    bind_tube: TestTube,
+    complete: CheckCircle,
+    skip: SkipForward,
+    transfer: ArrowRight,
+    window_open: AlertCircle,
+    window_close: AlertCircle,
+  };
+
+  const operationColor: Record<OperationType, string> = {
+    create: 'bg-gray-100 text-gray-600',
+    call: 'bg-blue-100 text-blue-600',
+    bind_tube: 'bg-purple-100 text-purple-600',
+    complete: 'bg-green-100 text-green-600',
+    skip: 'bg-red-100 text-red-600',
+    transfer: 'bg-amber-100 text-amber-600',
+    window_open: 'bg-green-100 text-green-600',
+    window_close: 'bg-gray-100 text-gray-600',
+  };
+
+  const operationLabel: Record<OperationType, string> = {
+    create: '取号',
+    call: '叫号',
+    bind_tube: '绑定试管',
+    complete: '完成抽血',
+    skip: '过号',
+    transfer: '窗口调剂',
+    window_open: '窗口开启',
+    window_close: '窗口关闭',
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex gap-4 flex-wrap">
-        {windows.map((win) => (
-          <button
-            key={win.id}
-            onClick={() => win.status !== 'closed' && setSelectedWindowId(win.id)}
-            disabled={win.status === 'closed'}
-            className={`relative px-5 py-3 rounded-xl transition-all duration-200 ${
-              selectedWindowId === win.id
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 scale-105'
-                : win.status === 'closed'
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <span
-                className={`w-2.5 h-2.5 rounded-full ${
-                  windowStatusConfig[win.status].dotColor
-                }`}
-              />
-              <span className="font-bold">{win.name}</span>
-            </div>
-            <div className="text-xs mt-1 opacity-80">
-              排队 {win.queueLength} 人
-            </div>
-            {optimalWindow?.id === win.id && selectedWindowId !== win.id && (
-              <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-teal-500 text-white text-xs rounded-full">
-                最优
+        {windows.map((win) => {
+          const warning = stockWarnings.find((w) => w.windowId === win.id);
+          return (
+            <button
+              key={win.id}
+              onClick={() => win.status !== 'closed' && setSelectedWindowId(win.id)}
+              disabled={win.status === 'closed'}
+              className={`relative px-5 py-3 rounded-xl transition-all duration-200 ${
+                selectedWindowId === win.id
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 scale-105'
+                  : win.status === 'closed'
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    windowStatusConfig[win.status].dotColor
+                  }`}
+                />
+                <span className="font-bold">{win.name}</span>
               </div>
-            )}
-          </button>
-        ))}
+              <div className="text-xs mt-1 opacity-80">
+                排队 {win.queueLength} 人
+              </div>
+              {optimalWindow?.id === win.id && selectedWindowId !== win.id && (
+                <div className="absolute -top-2 -right-2 px-2 py-0.5 bg-teal-500 text-white text-xs rounded-full">
+                  最优
+                </div>
+              )}
+              {warning && selectedWindowId !== win.id && (
+                <div
+                  className={`absolute -bottom-2 -right-2 w-3 h-3 rounded-full ${
+                    warning.level === 'critical' ? 'bg-red-500' : 'bg-amber-500'
+                  } animate-pulse`}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
+
+      {currentWindowWarning && (
+        <motion.div
+          initial={{ y: -20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className={`rounded-2xl p-4 flex items-center gap-3 ${
+            currentWindowWarning.level === 'critical'
+              ? 'bg-red-50 border border-red-200'
+              : 'bg-amber-50 border border-amber-200'
+          }`}
+        >
+          <AlertTriangle
+            className={`w-6 h-6 ${
+              currentWindowWarning.level === 'critical' ? 'text-red-500' : 'text-amber-500'
+            }`}
+          />
+          <div>
+            <p
+              className={`font-bold ${
+                currentWindowWarning.level === 'critical' ? 'text-red-700' : 'text-amber-700'
+              }`}
+            >
+              {currentWindow.name} 试管库存不足
+            </p>
+            <p
+              className={`text-sm ${
+                currentWindowWarning.level === 'critical' ? 'text-red-600' : 'text-amber-600'
+              }`}
+            >
+              当前剩余 {windowTotalRemain} 支，低于{currentWindowWarning.level === 'critical' ? `危急阈值 ${appConfig.criticalThreshold}` : `预警阈值 ${appConfig.stockThreshold}`}，请尽快补充
+            </p>
+          </div>
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -373,13 +474,80 @@ const WorkbenchPage = () => {
             </motion.div>
           )}
 
+          {currentTicket && (
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+            >
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+                <History className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-gray-800">抽血流程记录</h3>
+              </div>
+              <div className="p-4 max-h-64 overflow-y-auto">
+                {timeline.length === 0 ? (
+                  <div className="py-6 text-center text-gray-400 text-sm">
+                    暂无操作记录
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-gray-100" />
+                    <ul className="space-y-4">
+                      {timeline.map((record, idx) => {
+                        const Icon = operationIcon[record.type] || Clock;
+                        return (
+                          <li key={record.id} className="relative pl-10">
+                            <div
+                              className={`absolute left-0 top-1 w-8 h-8 rounded-full flex items-center justify-center ${
+                                operationColor[record.type]
+                              }`}
+                            >
+                              <Icon className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium text-gray-800 text-sm">
+                                  {operationLabel[record.type]}
+                                </span>
+                                <span className="text-xs text-gray-400">
+                                  {record.timestamp.split(' ')[1]}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {record.description}
+                              </p>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
+            transition={{ duration: 0.4, delay: 0.25 }}
             className="bg-white rounded-2xl shadow-sm p-5 border border-gray-100"
           >
-            <h3 className="font-bold text-gray-800 mb-4">窗口统计</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-gray-800">窗口统计</h3>
+              {windowTotalRemain <= appConfig.stockThreshold && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full ${
+                    windowTotalRemain <= appConfig.criticalThreshold
+                      ? 'bg-red-100 text-red-600'
+                      : 'bg-amber-100 text-amber-600'
+                  }`}
+                >
+                  库存不足
+                </span>
+              )}
+            </div>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">今日已服务</span>
@@ -397,6 +565,20 @@ const WorkbenchPage = () => {
                 <span className="text-gray-500">当前排队</span>
                 <span className="text-2xl font-bold text-amber-600">
                   {currentWindow?.queueLength || 0} 人
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">试管库存</span>
+                <span
+                  className={`text-2xl font-bold ${
+                    windowTotalRemain <= appConfig.criticalThreshold
+                      ? 'text-red-600'
+                      : windowTotalRemain <= appConfig.stockThreshold
+                        ? 'text-amber-600'
+                        : 'text-green-600'
+                  }`}
+                >
+                  {windowTotalRemain} 支
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -439,6 +621,54 @@ const WorkbenchPage = () => {
                 <TestTube className="w-5 h-5" />
                 <span className="font-medium">绑定试管</span>
               </button>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 0.4, delay: 0.35 }}
+            className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+          >
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h3 className="font-bold text-gray-800">最近处理</h3>
+            </div>
+            <div className="max-h-48 overflow-y-auto">
+              {recentRecords.length === 0 ? (
+                <div className="py-6 text-center text-gray-400 text-sm">
+                  暂无处理记录
+                </div>
+              ) : (
+                <ul className="divide-y divide-gray-50">
+                  {recentRecords
+                    .filter((r) => r.ticketId)
+                    .slice(0, 5)
+                    .map((record) => {
+                      const Icon = operationIcon[record.type] || Clock;
+                      return (
+                        <li key={record.id} className="px-4 py-3 hover:bg-gray-50 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                                operationColor[record.type]
+                              }`}
+                            >
+                              <Icon className="w-4 h-4" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-800 truncate">
+                                A{record.ticketNumber} {record.patientName}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {operationLabel[record.type]} · {record.timestamp.split(' ')[1]}
+                              </p>
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                </ul>
+              )}
             </div>
           </motion.div>
         </div>
@@ -494,11 +724,15 @@ const WorkbenchPage = () => {
                       className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="">请选择批次</option>
-                      {availableBatches.map((batch) => (
-                        <option key={batch.batchId} value={batch.batchId}>
-                          {batch.batchNo} - {batch.tubeType} (剩余{batch.remainQuantity}支)
-                        </option>
-                      ))}
+                      {availableBatches.map((batch) => {
+                        const isLow = batch.remainQuantity <= appConfig.stockThreshold;
+                        return (
+                          <option key={batch.batchId} value={batch.batchId}>
+                            {batch.batchNo} - {batch.tubeType} (剩余{batch.remainQuantity}支)
+                            {isLow ? ' - 库存不足' : ''}
+                          </option>
+                        );
+                      })}
                     </select>
                   )}
                 </div>
