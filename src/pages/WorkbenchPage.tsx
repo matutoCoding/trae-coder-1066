@@ -38,6 +38,8 @@ const WorkbenchPage = () => {
     completeTicket,
     skipTicket,
     bindTube,
+    voidTube,
+    replaceTube,
     tickets: allTickets,
   } = useTicketStore();
   const { getSplitRecordsByTarget, addSplitRecord } = useSplitStore();
@@ -55,6 +57,12 @@ const WorkbenchPage = () => {
     quantity: 50,
     operator: '管理员',
   });
+  const [showTubeActionModal, setShowTubeActionModal] = useState(false);
+  const [showVoidModal, setShowVoidModal] = useState(false);
+  const [showReplaceModal, setShowReplaceModal] = useState(false);
+  const [activeBarcode, setActiveBarcode] = useState('');
+  const [tubeReason, setTubeReason] = useState('');
+  const [newBarcodeInput, setNewBarcodeInput] = useState('');
 
   const currentWindow = getWindowById(selectedWindowId);
   const currentTicket = getCurrentTicketByWindow(selectedWindowId);
@@ -118,14 +126,35 @@ const WorkbenchPage = () => {
 
   const handleComplete = () => {
     if (currentTicket) {
-      completeTicket(currentTicket.id);
+      const ticketId = currentTicket.id;
+      completeTicket(ticketId);
+      setSelectedHistoryTicketId(ticketId);
     }
   };
 
   const handleSkip = () => {
     if (currentTicket) {
-      skipTicket(currentTicket.id);
+      const ticketId = currentTicket.id;
+      skipTicket(ticketId);
+      setSelectedHistoryTicketId(ticketId);
     }
+  };
+
+  const handleVoidTube = () => {
+    if (!displayTicketId || !activeBarcode || !tubeReason.trim()) return;
+    voidTube(displayTicketId, activeBarcode, tubeReason.trim());
+    setShowVoidModal(false);
+    setActiveBarcode('');
+    setTubeReason('');
+  };
+
+  const handleReplaceTube = () => {
+    if (!displayTicketId || !activeBarcode || !newBarcodeInput.trim() || !tubeReason.trim()) return;
+    replaceTube(displayTicketId, activeBarcode, newBarcodeInput.trim(), tubeReason.trim());
+    setShowReplaceModal(false);
+    setActiveBarcode('');
+    setNewBarcodeInput('');
+    setTubeReason('');
   };
 
   const handleBindTube = () => {
@@ -181,6 +210,8 @@ const WorkbenchPage = () => {
     create: Calendar,
     call: Mic,
     bind_tube: TestTube,
+    void_tube: AlertTriangle,
+    replace_tube: RefreshCw,
     complete: CheckCircle,
     skip: SkipForward,
     transfer: ArrowRight,
@@ -192,6 +223,8 @@ const WorkbenchPage = () => {
     create: 'bg-gray-100 text-gray-600',
     call: 'bg-blue-100 text-blue-600',
     bind_tube: 'bg-purple-100 text-purple-600',
+    void_tube: 'bg-red-100 text-red-600',
+    replace_tube: 'bg-amber-100 text-amber-600',
     complete: 'bg-green-100 text-green-600',
     skip: 'bg-red-100 text-red-600',
     transfer: 'bg-amber-100 text-amber-600',
@@ -203,6 +236,8 @@ const WorkbenchPage = () => {
     create: '取号',
     call: '叫号',
     bind_tube: '绑定试管',
+    void_tube: '作废试管',
+    replace_tube: '更换试管',
     complete: '完成抽血',
     skip: '过号',
     transfer: '窗口调剂',
@@ -398,7 +433,12 @@ const WorkbenchPage = () => {
 
                   {displayTicket.tubeBarcodes && displayTicket.tubeBarcodes.length > 0 && (
                     <div className="mt-4 p-4 bg-purple-50 rounded-xl max-w-md mx-auto">
-                      <p className="text-sm text-purple-600 font-medium mb-2">已绑定试管</p>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm text-purple-600 font-medium">已绑定试管</p>
+                        {currentTicket && currentTicket.id === displayTicket.id && (
+                          <span className="text-xs text-purple-400">点击条码可操作</span>
+                        )}
+                      </div>
                       <div className="space-y-2">
                         <div className="flex items-center justify-between text-sm">
                           <span className="text-purple-500 flex items-center gap-1">
@@ -414,14 +454,27 @@ const WorkbenchPage = () => {
                             <Barcode className="w-4 h-4" />
                             试管条码
                           </span>
-                          <div className="flex flex-wrap gap-1 justify-end">
+                          <div className="flex flex-wrap gap-1.5 justify-end">
                             {displayTicket.tubeBarcodes.map((barcode, idx) => (
-                              <span
+                              <button
                                 key={idx}
-                                className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded font-mono text-xs"
+                                onClick={() => {
+                                  if (currentTicket && currentTicket.id === displayTicket.id) {
+                                    setActiveBarcode(barcode);
+                                    setTubeReason('');
+                                    setNewBarcodeInput('');
+                                    setShowTubeActionModal(true);
+                                  }
+                                }}
+                                className={`px-2 py-1 bg-purple-100 text-purple-700 rounded font-mono text-xs transition-colors ${
+                                  currentTicket && currentTicket.id === displayTicket.id
+                                    ? 'cursor-pointer hover:bg-purple-200'
+                                    : 'cursor-default'
+                                }`}
+                                title={currentTicket && currentTicket.id === displayTicket.id ? '点击操作试管' : undefined}
                               >
                                 {barcode}
-                              </span>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -1011,6 +1064,232 @@ const WorkbenchPage = () => {
                     className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                   >
                     确认补货
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showTubeActionModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowTubeActionModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25 }}
+              className="bg-white rounded-2xl w-full max-w-sm shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-800">试管操作</h3>
+                <button
+                  onClick={() => setShowTubeActionModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6">
+                <div className="bg-purple-50 rounded-xl p-4 mb-5">
+                  <p className="text-sm text-purple-600 mb-1">试管条码</p>
+                  <p className="font-mono font-bold text-purple-800 text-lg">{activeBarcode}</p>
+                </div>
+
+                <div className="space-y-3">
+                  <button
+                    onClick={() => {
+                      setShowTubeActionModal(false);
+                      setShowReplaceModal(true);
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-4 rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors"
+                  >
+                    <RefreshCw className="w-6 h-6" />
+                    <div className="text-left">
+                      <p className="font-bold">更换试管</p>
+                      <p className="text-xs opacity-75">用新的试管替换当前试管</p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 ml-auto" />
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowTubeActionModal(false);
+                      setShowVoidModal(true);
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-4 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
+                  >
+                    <AlertTriangle className="w-6 h-6" />
+                    <div className="text-left">
+                      <p className="font-bold">作废试管</p>
+                      <p className="text-xs opacity-75">标记当前试管为作废</p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 ml-auto" />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showVoidModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowVoidModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25 }}
+              className="bg-white rounded-2xl w-full max-w-md shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-800">作废试管</h3>
+                <button
+                  onClick={() => setShowVoidModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="bg-red-50 rounded-xl p-4">
+                  <p className="text-sm text-red-600 mb-1">试管条码</p>
+                  <p className="font-mono font-bold text-red-800 text-lg">{activeBarcode}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    作废原因 <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={tubeReason}
+                    onChange={(e) => setTubeReason(e.target.value)}
+                    placeholder="请输入作废原因"
+                    rows={3}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowVoidModal(false)}
+                    className="flex-1 py-3 border border-gray-200 text-gray-600 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleVoidTube}
+                    disabled={!tubeReason.trim()}
+                    className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                  >
+                    确认作废
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showReplaceModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowReplaceModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25 }}
+              className="bg-white rounded-2xl w-full max-w-md shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-800">更换试管</h3>
+                <button
+                  onClick={() => setShowReplaceModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="bg-amber-50 rounded-xl p-4">
+                  <p className="text-sm text-amber-600 mb-1">原试管条码</p>
+                  <p className="font-mono font-bold text-amber-800 text-lg">{activeBarcode}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    新试管条码 <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <Barcode className="w-5 h-5 text-gray-400" />
+                    <input
+                      type="text"
+                      value={newBarcodeInput}
+                      onChange={(e) => setNewBarcodeInput(e.target.value)}
+                      placeholder="扫描或输入新试管条码"
+                      className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    更换原因 <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={tubeReason}
+                    onChange={(e) => setTubeReason(e.target.value)}
+                    placeholder="请输入更换原因"
+                    rows={3}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent resize-none"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowReplaceModal(false)}
+                    className="flex-1 py-3 border border-gray-200 text-gray-600 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleReplaceTube}
+                    disabled={!newBarcodeInput.trim() || !tubeReason.trim()}
+                    className="flex-1 py-3 bg-amber-600 text-white rounded-xl font-medium hover:bg-amber-700 transition-colors shadow-lg shadow-amber-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                  >
+                    确认更换
                   </motion.button>
                 </div>
               </div>

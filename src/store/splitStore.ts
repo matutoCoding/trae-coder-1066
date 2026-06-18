@@ -125,92 +125,52 @@ export const useSplitStore = create<SplitState>()(
 
       getDestinationDistribution: (batchId) => {
         const records = get().getSplitRecordsByBatch(batchId);
-        const distribution: { [key: string]: { name: string; value: number; type: string } } = {};
+        const distribution: { [key: string]: { name: string; value: number; type: string; splitId?: string } } = {};
 
-        const addOrUpdate = (key: string, name: string, value: number, type: string) => {
+        const addOrUpdate = (key: string, name: string, value: number, type: string, splitId?: string) => {
           if (!distribution[key]) {
-            distribution[key] = { name, value: 0, type };
+            distribution[key] = { name, value: 0, type, splitId };
           }
           distribution[key].value += value;
         };
 
-        const getLeafDistribution = (splitId: string, parentQuantity: number): void => {
-          const children = get().getSplitRecordsByParent(splitId);
-
-          if (children.length === 0) {
-            const record = records.find((r) => r.id === splitId);
-            if (record) {
-              const usedQuantity = parentQuantity - record.remainQuantity;
-              if (usedQuantity > 0) {
-                addOrUpdate(
-                  record.targetId,
-                  record.targetName,
-                  usedQuantity,
-                  record.targetType
-                );
-              }
-              if (record.remainQuantity > 0) {
-                addOrUpdate(
-                  `${record.targetId}-remain`,
-                  `${record.targetName}(剩余)`,
-                  record.remainQuantity,
-                  record.targetType
-                );
-              }
-            }
-            return;
-          }
-
-          let distributed = 0;
-          for (const child of children) {
-            const childUsed = child.quantity;
-            distributed += childUsed;
-            getLeafDistribution(child.id, child.quantity);
-          }
-
+        const traverse = (splitId: string) => {
           const record = records.find((r) => r.id === splitId);
-          if (record && parentQuantity - distributed > 0) {
+          if (!record) return;
+
+          if (record.targetType === 'sub_split') {
             addOrUpdate(
-              `${record.targetId}-remain`,
-              `${record.targetName}(剩余)`,
-              parentQuantity - distributed,
-              record.targetType
+              `sub-${record.targetId}`,
+              record.targetName,
+              record.quantity,
+              'sub_split',
+              record.id
             );
+          } else {
+            const usedQty = record.quantity - record.remainQuantity;
+            if (usedQty > 0) {
+              addOrUpdate(
+                record.targetId,
+                record.targetName,
+                usedQty,
+                record.targetType,
+                record.id
+              );
+            }
+          }
+
+          const children = get().getSplitRecordsByParent(splitId);
+          for (const child of children) {
+            traverse(child.id);
           }
         };
 
         for (const record of records) {
           if (record.parentSplitId) continue;
-
-          if (record.targetType === 'sub_split') {
-            getLeafDistribution(record.id, record.quantity);
-          } else {
-            const usedQuantity = record.quantity - record.remainQuantity;
-            if (usedQuantity > 0) {
-              addOrUpdate(
-                record.targetId,
-                record.targetName,
-                usedQuantity,
-                record.targetType
-              );
-            }
-            if (record.remainQuantity > 0) {
-              addOrUpdate(
-                `${record.targetId}-remain`,
-                `${record.targetName}(剩余)`,
-                record.remainQuantity,
-                record.targetType
-              );
-            }
-
-            const children = get().getSplitRecordsByParent(record.id);
-            for (const child of children) {
-              getLeafDistribution(child.id, child.quantity);
-            }
-          }
+          traverse(record.id);
         }
 
-        return Object.values(distribution).filter((d) => d.value > 0);
+        return Object.values(distribution).filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
       },
 
       getTotalDistributed: (batchId) => {

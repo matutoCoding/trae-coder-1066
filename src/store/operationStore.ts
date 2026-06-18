@@ -189,6 +189,34 @@ export const recordOperation = {
     );
   },
 
+  voidTube: (ticketId: string, ticketNumber: number, patientName: string, windowId: string, barcode: string, batchNo: string, reason: string) => {
+    useOperationStore.getState().addRecord(
+      'void_tube',
+      {
+        ticketId,
+        ticketNumber,
+        patientName,
+        windowId,
+        description: `${patientName} 作废试管 ${barcode}，原因：${reason}`,
+      },
+      { barcode, batchNo, reason }
+    );
+  },
+
+  replaceTube: (ticketId: string, ticketNumber: number, patientName: string, windowId: string, oldBarcode: string, newBarcode: string, batchNo: string, reason: string) => {
+    useOperationStore.getState().addRecord(
+      'replace_tube',
+      {
+        ticketId,
+        ticketNumber,
+        patientName,
+        windowId,
+        description: `${patientName} 更换试管 ${oldBarcode} → ${newBarcode}，原因：${reason}`,
+      },
+      { oldBarcode, newBarcode, batchNo, reason }
+    );
+  },
+
   completeTicket: (ticketId: string, ticketNumber: number, patientName: string, windowId: string) => {
     useOperationStore.getState().addRecord(
       'complete',

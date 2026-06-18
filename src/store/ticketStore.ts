@@ -21,6 +21,8 @@ interface TicketState {
   getCompletedCount: () => number;
   transferTicket: (ticketId: string, toWindowId: string) => void;
   bindTube: (ticketId: string, barcode: string, batchNo: string) => void;
+  voidTube: (ticketId: string, barcode: string, reason: string) => void;
+  replaceTube: (ticketId: string, oldBarcode: string, newBarcode: string, reason: string) => void;
   resetTickets: () => void;
   recalculateQueueLengths: () => void;
 }
@@ -224,6 +226,85 @@ export const useTicketStore = create<TicketState>()(
             ticket.windowId,
             barcode,
             batchNo
+          );
+        }
+      },
+
+      voidTube: (ticketId, barcode, reason) => {
+        const ticket = get().tickets.find((t) => t.id === ticketId);
+        if (!ticket || !ticket.tubeBarcodes?.includes(barcode)) return;
+
+        set((state) => ({
+          tickets: state.tickets.map((t) =>
+            t.id === ticketId
+              ? {
+                  ...t,
+                  tubeBarcodes: t.tubeBarcodes?.filter((b) => b !== barcode),
+                }
+              : t
+          ),
+        }));
+
+        if (ticket) {
+          recordOperation.voidTube(
+            ticket.id,
+            ticket.number,
+            ticket.patientName,
+            ticket.windowId,
+            barcode,
+            ticket.tubeBatchNo || '',
+            reason
+          );
+        }
+      },
+
+      replaceTube: (ticketId, oldBarcode, newBarcode, reason) => {
+        const ticket = get().tickets.find((t) => t.id === ticketId);
+        if (!ticket || !ticket.tubeBarcodes?.includes(oldBarcode)) return;
+
+        const splitStore = useSplitStore.getState();
+        const windowSplits = splitStore.getSplitRecordsByTarget(
+          'window',
+          ticket.windowId
+        );
+
+        const targetSplit = windowSplits.find(
+          (s) => s.batchNo === ticket.tubeBatchNo && s.remainQuantity > 0
+        );
+
+        if (targetSplit) {
+          useSplitStore.setState({
+            splitRecords: splitStore.splitRecords.map((s) =>
+              s.id === targetSplit.id
+                ? { ...s, remainQuantity: Math.max(0, s.remainQuantity - 1) }
+                : s
+            ),
+          });
+        }
+
+        set((state) => ({
+          tickets: state.tickets.map((t) =>
+            t.id === ticketId
+              ? {
+                  ...t,
+                  tubeBarcodes: t.tubeBarcodes?.map((b) =>
+                    b === oldBarcode ? newBarcode : b
+                  ),
+                }
+              : t
+          ),
+        }));
+
+        if (ticket) {
+          recordOperation.replaceTube(
+            ticket.id,
+            ticket.number,
+            ticket.patientName,
+            ticket.windowId,
+            oldBarcode,
+            newBarcode,
+            ticket.tubeBatchNo || '',
+            reason
           );
         }
       },

@@ -94,6 +94,8 @@ export type OperationType =
   | 'create'
   | 'call'
   | 'bind_tube'
+  | 'void_tube'
+  | 'replace_tube'
   | 'complete'
   | 'skip'
   | 'transfer'
