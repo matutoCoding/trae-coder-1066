@@ -21,6 +21,7 @@ export interface Ticket {
   finishTime?: string;
   tubeBarcodes?: string[];
   tubeBatchNo?: string;
+  recallCount?: number;
 }
 
 export type WindowStatus = 'open' | 'closed' | 'busy' | 'idle';

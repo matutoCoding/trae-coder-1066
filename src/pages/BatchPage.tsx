@@ -110,11 +110,23 @@ const BatchPage = () => {
     });
   };
 
+  const getBoundTicketsBySplit = (split: SplitRecord) => {
+    if (split.targetType !== 'window' || !selectedBatch) return [];
+    return tickets.filter(
+      (t) =>
+        t.windowId === split.targetId &&
+        t.tubeBatchNo === selectedBatch.batchNo &&
+        t.tubeBarcodes &&
+        t.tubeBarcodes.length > 0
+    );
+  };
+
   const renderSplitTree = (splits: SplitRecord[], level: number = 0) => {
     return splits.map((split) => {
       const children = getChildSplits(split.id);
       const hasChildren = children.length > 0;
       const isExpanded = expandedSplits.has(split.id);
+      const boundTickets = getBoundTicketsBySplit(split);
 
       const targetTypeLabel = {
         window: '窗口',
@@ -134,60 +146,104 @@ const BatchPage = () => {
       return (
         <div key={split.id} style={{ marginLeft: level * 20 }}>
           <div
-            className={`flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors cursor-pointer ${
+            className={`p-3 rounded-xl hover:bg-gray-50 transition-colors ${
               level > 0 ? 'border-l-2 border-gray-200 ml-3' : ''
             }`}
-            onClick={() => hasChildren && toggleSplitExpand(split.id)}
           >
-            {hasChildren ? (
-              isExpanded ? (
-                <ChevronDown className="w-4 h-4 text-gray-400" />
+            <div
+              className="flex items-center gap-3 cursor-pointer"
+              onClick={() => hasChildren && toggleSplitExpand(split.id)}
+            >
+              {hasChildren ? (
+                isExpanded ? (
+                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                )
               ) : (
-                <ChevronRight className="w-4 h-4 text-gray-400" />
-              )
-            ) : (
-              <div className="w-4" />
+                <div className="w-4" />
+              )}
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-2 py-0.5 rounded text-xs font-medium ${targetTypeColor}`}
+                  >
+                    {targetTypeLabel}
+                  </span>
+                  <span className="font-medium text-gray-800">{split.targetName}</span>
+                  {split.level > 0 && (
+                    <span className="text-xs text-gray-400">第{split.level}级拆分</span>
+                  )}
+                  {split.targetType === 'window' && boundTickets.length > 0 && (
+                    <span className="text-xs text-blue-500">
+                      已绑定 {boundTickets.length} 支
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3" />
+                    {split.splitTime}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <User className="w-3 h-3" />
+                    {split.operator}
+                  </span>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-bold text-gray-800">
+                  <span
+                    className={
+                      split.remainQuantity <= 5
+                        ? 'text-red-600'
+                        : split.remainQuantity <= 20
+                          ? 'text-amber-600'
+                          : ''
+                    }
+                  >
+                    {split.remainQuantity}
+                  </span>{' '}
+                  / {split.quantity} 支
+                </div>
+                <div className="mt-1 w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${
+                      usagePercent > 80
+                        ? 'bg-red-400'
+                        : usagePercent > 50
+                          ? 'bg-amber-400'
+                          : 'bg-green-400'
+                    }`}
+                    style={{ width: `${usagePercent}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {split.targetType === 'window' && boundTickets.length > 0 && (
+              <div className="mt-3 ml-7 p-3 bg-blue-50 rounded-xl border border-blue-100">
+                <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-blue-700">
+                  <Barcode className="w-3.5 h-3.5" />
+                  已绑定试管条码
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {boundTickets.map((t) =>
+                    t.tubeBarcodes?.map((bc, idx) => (
+                      <div
+                        key={`${t.id}-${idx}`}
+                        className="flex items-center gap-1 px-2 py-1 bg-white rounded border border-blue-200"
+                      >
+                        <span className="text-xs font-mono text-blue-800">{bc}</span>
+                        <span className="text-xs text-gray-400">
+                          A{t.number}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             )}
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`px-2 py-0.5 rounded text-xs font-medium ${targetTypeColor}`}
-                >
-                  {targetTypeLabel}
-                </span>
-                <span className="font-medium text-gray-800">{split.targetName}</span>
-                {split.level > 0 && (
-                  <span className="text-xs text-gray-400">第{split.level}级拆分</span>
-                )}
-              </div>
-              <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  {split.splitTime}
-                </span>
-                <span className="flex items-center gap-1">
-                  <User className="w-3 h-3" />
-                  {split.operator}
-                </span>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="font-bold text-gray-800">
-                {split.remainQuantity} / {split.quantity} 支
-              </div>
-              <div className="mt-1 w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${
-                    usagePercent > 80
-                      ? 'bg-red-400'
-                      : usagePercent > 50
-                        ? 'bg-amber-400'
-                        : 'bg-green-400'
-                  }`}
-                  style={{ width: `${usagePercent}%` }}
-                />
-              </div>
-            </div>
           </div>
           {hasChildren && isExpanded && renderSplitTree(children, level + 1)}
         </div>

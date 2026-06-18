@@ -70,7 +70,12 @@ export const useTicketStore = create<TicketState>()(
       getWaitingTicketsByWindow: (windowId) => {
         return get()
           .tickets.filter((t) => t.windowId === windowId && t.status === 'waiting')
-          .sort((a, b) => a.number - b.number);
+          .sort((a, b) => {
+            const ra = a.recallCount || 0;
+            const rb = b.recallCount || 0;
+            if (ra !== rb) return ra - rb;
+            return a.number - b.number;
+          });
       },
 
       callNextTicket: (windowId) => {
@@ -93,7 +98,7 @@ export const useTicketStore = create<TicketState>()(
             t.id === nextTicket.id
               ? { ...t, status: 'calling' as const, callTime: now }
               : t.status === 'calling' && t.windowId === windowId
-                ? { ...t, status: 'waiting' as const }
+                ? { ...t, status: 'waiting' as const, recallCount: (t.recallCount || 0) + 1 }
                 : t
           ),
         }));

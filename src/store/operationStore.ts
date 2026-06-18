@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { OperationRecord, OperationType, AppConfig } from '../types';
+import type { OperationRecord, OperationType, AppConfig, StockWarning } from '../types';
 import { useWindowStore } from './windowStore';
 import { useTicketStore } from './ticketStore';
 import { useSplitStore } from './splitStore';
@@ -19,7 +19,7 @@ interface OperationState {
   getRecentRecords: (limit?: number) => OperationRecord[];
   getTicketTimeline: (ticketId: string) => OperationRecord[];
   updateConfig: (config: Partial<AppConfig>) => void;
-  checkStockWarnings: () => { windowId: string; level: 'low' | 'critical' }[];
+  checkStockWarnings: () => StockWarning[];
 }
 
 const generateId = (): string => {
@@ -96,9 +96,10 @@ export const useOperationStore = create<OperationState>()(
         const { appConfig } = get();
         const windowStore = useWindowStore.getState();
         const splitStore = useSplitStore.getState();
-        const warnings: { windowId: string; level: 'low' | 'critical' }[] = [];
+        const warnings: StockWarning[] = [];
 
         const openWindows = windowStore.getAllOpenWindows();
+        const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
         for (const win of openWindows) {
           const windowSplits = splitStore.getSplitRecordsByTarget('window', win.id);
@@ -108,9 +109,31 @@ export const useOperationStore = create<OperationState>()(
           );
 
           if (totalRemain <= appConfig.criticalThreshold) {
-            warnings.push({ windowId: win.id, level: 'critical' });
+            warnings.push({
+              id: `warn-${win.id}-${now}`,
+              windowId: win.id,
+              windowName: win.name,
+              batchId: '',
+              batchNo: '',
+              tubeType: '',
+              remainQuantity: totalRemain,
+              threshold: appConfig.criticalThreshold,
+              level: 'critical',
+              timestamp: now,
+            });
           } else if (totalRemain <= appConfig.stockThreshold) {
-            warnings.push({ windowId: win.id, level: 'low' });
+            warnings.push({
+              id: `warn-${win.id}-${now}`,
+              windowId: win.id,
+              windowName: win.name,
+              batchId: '',
+              batchNo: '',
+              tubeType: '',
+              remainQuantity: totalRemain,
+              threshold: appConfig.stockThreshold,
+              level: 'low',
+              timestamp: now,
+            });
           }
         }
 

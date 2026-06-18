@@ -53,6 +53,14 @@ const SplitPage = () => {
     operator: '管理员',
   });
 
+  const [showRestockModal, setShowRestockModal] = useState(false);
+  const [restockForm, setRestockForm] = useState({
+    windowId: '',
+    batchId: '',
+    quantity: 50,
+    operator: '管理员',
+  });
+
   const selectedBatch = getBatchById(selectedBatchId);
   const batchSplitRecords = getSplitRecordsByBatch(selectedBatchId);
   const topLevelSplits = batchSplitRecords.filter((r) => !r.parentSplitId);
@@ -125,6 +133,29 @@ const SplitPage = () => {
   const maxQuantity = selectedParentId
     ? splitRecords.find((r) => r.id === selectedParentId)?.remainQuantity || 0
     : selectedBatch?.remainQuantity || 0;
+
+  const handleRestock = () => {
+    if (!restockForm.batchId || !restockForm.windowId || restockForm.quantity <= 0) return;
+
+    const win = windows.find((w) => w.id === restockForm.windowId);
+    if (!win) return;
+
+    const result = addSplitRecord(
+      restockForm.batchId,
+      restockForm.quantity,
+      'window',
+      restockForm.windowId,
+      win.name,
+      restockForm.operator
+    );
+
+    if (result) {
+      setShowRestockModal(false);
+      setRestockForm({ windowId: '', batchId: '', quantity: 50, operator: '管理员' });
+    }
+  };
+
+  const activeBatches = getActiveBatches();
 
   const SplitTreeNode = ({ record, level = 0 }: { record: SplitRecord; level?: number }) => {
     const children = getSplitRecordsByParent(record.id);
@@ -280,6 +311,26 @@ const SplitPage = () => {
               试管库存不足，请尽快补充
             </p>
           </div>
+          <button
+            onClick={() => {
+              setShowRestockModal(true);
+              if (stockWarnings.length > 0) {
+                setRestockForm((f) => ({
+                  ...f,
+                  windowId: stockWarnings[0].windowId,
+                  batchId: activeBatches[0]?.id || '',
+                }));
+              }
+            }}
+            className={`px-4 py-2 rounded-xl font-medium text-sm flex items-center gap-1.5 transition-colors ${
+              stockWarnings.some((w) => w.level === 'critical')
+                ? 'bg-red-500 text-white hover:bg-red-600'
+                : 'bg-amber-500 text-white hover:bg-amber-600'
+            }`}
+          >
+            <Plus className="w-4 h-4" />
+            快速补货
+          </button>
         </motion.div>
       )}
 
@@ -749,6 +800,144 @@ const SplitPage = () => {
                   </motion.button>
                 </div>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showRestockModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowRestockModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25 }}
+              className="bg-white rounded-2xl w-full max-w-md shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-800">试管快速补货</h3>
+                <button
+                  onClick={() => setShowRestockModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    目标窗口 <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={restockForm.windowId}
+                    onChange={(e) =>
+                      setRestockForm((f) => ({ ...f, windowId: e.target.value }))
+                    }
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">请选择窗口</option>
+                    {windows
+                      .filter((w) => w.status !== 'closed')
+                      .map((win) => {
+                        const warn = stockWarnings.find((w) => w.windowId === win.id);
+                        return (
+                          <option key={win.id} value={win.id}>
+                            {win.name}
+                            {warn ? ` - ${warn.level === 'critical' ? '危急' : '预警'} (剩余${warn.remainQuantity}支)` : ''}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    选择批次 <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={restockForm.batchId}
+                    onChange={(e) =>
+                      setRestockForm((f) => ({ ...f, batchId: e.target.value }))
+                    }
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">请选择批次</option>
+                    {activeBatches.map((batch) => (
+                      <option key={batch.id} value={batch.id}>
+                        {batch.batchNo} - {batch.tubeType} (剩余{batch.remainQuantity}支)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    补货数量 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={restockForm.quantity}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 0;
+                      const batch = getBatchById(restockForm.batchId);
+                      const max = batch ? batch.remainQuantity : 9999;
+                      setRestockForm((f) => ({
+                        ...f,
+                        quantity: Math.max(1, Math.min(max, val)),
+                      }));
+                    }}
+                    min="1"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  {restockForm.batchId && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      批次可用: {getBatchById(restockForm.batchId)?.remainQuantity || 0} 支
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    操作人
+                  </label>
+                  <input
+                    type="text"
+                    value={restockForm.operator}
+                    onChange={(e) =>
+                      setRestockForm((f) => ({ ...f, operator: e.target.value }))
+                    }
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowRestockModal(false)}
+                    className="flex-1 py-3 border border-gray-200 text-gray-600 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleRestock}
+                    disabled={!restockForm.batchId || !restockForm.windowId || restockForm.quantity <= 0}
+                    className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                  >
+                    确认补货
+                  </motion.button>
+                </div>
+              </div>
             </motion.div>
           </motion.div>
         )}
