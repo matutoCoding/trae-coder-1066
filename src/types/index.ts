@@ -20,6 +20,7 @@ export interface Ticket {
   callTime?: string;
   finishTime?: string;
   tubeBarcodes?: string[];
+  tubeBatchNo?: string;
 }
 
 export type WindowStatus = 'open' | 'closed' | 'busy' | 'idle';

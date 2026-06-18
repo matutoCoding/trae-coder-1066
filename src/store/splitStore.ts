@@ -129,15 +129,83 @@ export const useSplitStore = create<SplitState>()(
           distribution[key].value += value;
         };
 
+        const getLeafDistribution = (splitId: string, parentQuantity: number): void => {
+          const children = get().getSplitRecordsByParent(splitId);
+
+          if (children.length === 0) {
+            const record = records.find((r) => r.id === splitId);
+            if (record) {
+              const usedQuantity = parentQuantity - record.remainQuantity;
+              if (usedQuantity > 0) {
+                addOrUpdate(
+                  record.targetId,
+                  record.targetName,
+                  usedQuantity,
+                  record.targetType
+                );
+              }
+              if (record.remainQuantity > 0) {
+                addOrUpdate(
+                  `${record.targetId}-remain`,
+                  `${record.targetName}(剩余)`,
+                  record.remainQuantity,
+                  record.targetType
+                );
+              }
+            }
+            return;
+          }
+
+          let distributed = 0;
+          for (const child of children) {
+            const childUsed = child.quantity;
+            distributed += childUsed;
+            getLeafDistribution(child.id, child.quantity);
+          }
+
+          const record = records.find((r) => r.id === splitId);
+          if (record && parentQuantity - distributed > 0) {
+            addOrUpdate(
+              `${record.targetId}-remain`,
+              `${record.targetName}(剩余)`,
+              parentQuantity - distributed,
+              record.targetType
+            );
+          }
+        };
+
         for (const record of records) {
-          if (record.targetType === 'window') {
-            addOrUpdate(record.targetId, record.targetName, record.quantity - record.remainQuantity, 'window');
-          } else if (record.targetType === 'nurse') {
-            addOrUpdate(record.targetId, record.targetName, record.quantity - record.remainQuantity, 'nurse');
+          if (record.parentSplitId) continue;
+
+          if (record.targetType === 'sub_split') {
+            getLeafDistribution(record.id, record.quantity);
+          } else {
+            const usedQuantity = record.quantity - record.remainQuantity;
+            if (usedQuantity > 0) {
+              addOrUpdate(
+                record.targetId,
+                record.targetName,
+                usedQuantity,
+                record.targetType
+              );
+            }
+            if (record.remainQuantity > 0) {
+              addOrUpdate(
+                `${record.targetId}-remain`,
+                `${record.targetName}(剩余)`,
+                record.remainQuantity,
+                record.targetType
+              );
+            }
+
+            const children = get().getSplitRecordsByParent(record.id);
+            for (const child of children) {
+              getLeafDistribution(child.id, child.quantity);
+            }
           }
         }
 
-        return Object.values(distribution);
+        return Object.values(distribution).filter((d) => d.value > 0);
       },
 
       getTotalDistributed: (batchId) => {

@@ -10,9 +10,15 @@ import {
   ChevronRight,
   Volume2,
   AlertCircle,
+  X,
+  TestTube,
+  Barcode,
+  Package,
 } from 'lucide-react';
 import { useWindowStore } from '../store/windowStore';
 import { useTicketStore } from '../store/ticketStore';
+import { useSplitStore } from '../store/splitStore';
+import { useBatchStore } from '../store/batchStore';
 import { getOptimalWindow } from '../utils/loadBalancer';
 import type { Ticket } from '../types';
 
@@ -24,9 +30,15 @@ const WorkbenchPage = () => {
     callNextTicket,
     completeTicket,
     skipTicket,
+    bindTube,
   } = useTicketStore();
+  const { getSplitRecordsByTarget } = useSplitStore();
+  const { getBatchById } = useBatchStore();
 
   const [isCalling, setIsCalling] = useState(false);
+  const [showBindModal, setShowBindModal] = useState(false);
+  const [selectedBatchId, setSelectedBatchId] = useState('');
+  const [barcodeInput, setBarcodeInput] = useState('');
 
   const currentWindow = getWindowById(selectedWindowId);
   const currentTicket = getCurrentTicketByWindow(selectedWindowId);
@@ -36,6 +48,21 @@ const WorkbenchPage = () => {
   const optimalWindow = optimalResult
     ? getWindowById(optimalResult.windowId)
     : null;
+
+  const windowSplits = getSplitRecordsByTarget('window', selectedWindowId);
+
+  const availableBatches = windowSplits
+    .filter((s) => s.remainQuantity > 0)
+    .map((s) => {
+      const batch = getBatchById(s.batchId);
+      return {
+        splitId: s.id,
+        batchId: s.batchId,
+        batchNo: s.batchNo,
+        tubeType: batch?.tubeType || '',
+        remainQuantity: s.remainQuantity,
+      };
+    });
 
   const handleCallNext = () => {
     setIsCalling(true);
@@ -56,6 +83,18 @@ const WorkbenchPage = () => {
   const handleSkip = () => {
     if (currentTicket) {
       skipTicket(currentTicket.id);
+    }
+  };
+
+  const handleBindTube = () => {
+    if (!currentTicket || !selectedBatchId || !barcodeInput.trim()) return;
+
+    const selectedBatch = availableBatches.find((b) => b.batchId === selectedBatchId);
+    if (selectedBatch) {
+      bindTube(currentTicket.id, barcodeInput.trim(), selectedBatch.batchNo);
+      setShowBindModal(false);
+      setBarcodeInput('');
+      setSelectedBatchId('');
     }
   };
 
@@ -182,6 +221,39 @@ const WorkbenchPage = () => {
                       {statusConfig[currentTicket.status].label}
                     </span>
                   </div>
+
+                  {currentTicket.tubeBarcodes && currentTicket.tubeBarcodes.length > 0 && (
+                    <div className="mt-4 p-4 bg-purple-50 rounded-xl max-w-md mx-auto">
+                      <p className="text-sm text-purple-600 font-medium mb-2">已绑定试管</p>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-purple-500 flex items-center gap-1">
+                            <Package className="w-4 h-4" />
+                            批次号
+                          </span>
+                          <span className="font-mono font-bold text-purple-800">
+                            {currentTicket.tubeBatchNo}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-purple-500 flex items-center gap-1">
+                            <Barcode className="w-4 h-4" />
+                            试管条码
+                          </span>
+                          <div className="flex flex-wrap gap-1 justify-end">
+                            {currentTicket.tubeBarcodes.map((barcode, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded font-mono text-xs"
+                              >
+                                {barcode}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </motion.div>
               )}
 
@@ -352,14 +424,124 @@ const WorkbenchPage = () => {
                 <Volume2 className="w-5 h-5" />
                 <span className="font-medium">重复叫号</span>
               </button>
-              <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors">
-                <FileText className="w-5 h-5" />
+              <button
+                onClick={() => {
+                  if (currentTicket) {
+                    setShowBindModal(true);
+                    if (availableBatches.length > 0) {
+                      setSelectedBatchId(availableBatches[0].batchId);
+                    }
+                  }
+                }}
+                disabled={!currentTicket}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <TestTube className="w-5 h-5" />
                 <span className="font-medium">绑定试管</span>
               </button>
             </div>
           </motion.div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showBindModal && currentTicket && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowBindModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25 }}
+              className="bg-white rounded-2xl w-full max-w-md shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-800">绑定试管</h3>
+                <button
+                  onClick={() => setShowBindModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="bg-blue-50 rounded-xl p-4">
+                  <p className="text-sm text-blue-600 mb-1">受检者</p>
+                  <p className="font-bold text-blue-800">
+                    {currentTicket.patientName} · A{currentTicket.number}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    选择批次 <span className="text-red-500">*</span>
+                  </label>
+                  {availableBatches.length === 0 ? (
+                    <p className="text-amber-600 text-sm p-3 bg-amber-50 rounded-xl">
+                      当前窗口暂无可用试管，请先在拆分出库中分发试管
+                    </p>
+                  ) : (
+                    <select
+                      value={selectedBatchId}
+                      onChange={(e) => setSelectedBatchId(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">请选择批次</option>
+                      {availableBatches.map((batch) => (
+                        <option key={batch.batchId} value={batch.batchId}>
+                          {batch.batchNo} - {batch.tubeType} (剩余{batch.remainQuantity}支)
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    试管条码 <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <Barcode className="w-5 h-5 text-gray-400" />
+                    <input
+                      type="text"
+                      value={barcodeInput}
+                      onChange={(e) => setBarcodeInput(e.target.value)}
+                      placeholder="扫描或输入试管条码"
+                      className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowBindModal(false)}
+                    className="flex-1 py-3 border border-gray-200 text-gray-600 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleBindTube}
+                    disabled={!selectedBatchId || !barcodeInput.trim() || availableBatches.length === 0}
+                    className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                  >
+                    确认绑定
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

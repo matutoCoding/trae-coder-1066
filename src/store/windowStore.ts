@@ -64,7 +64,6 @@ export const useWindowStore = create<WindowState>()(
               ? {
                   ...w,
                   status: w.status === 'closed' ? 'open' : 'closed',
-                  queueLength: w.status === 'closed' ? w.queueLength : 0,
                 }
               : w
           ),

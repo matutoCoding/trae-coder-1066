@@ -4,6 +4,7 @@ import type { Ticket } from '../types';
 import { mockTickets, createTicket as createMockTicket } from '../data/mockData';
 import { getOptimalWindow } from '../utils/loadBalancer';
 import { useWindowStore } from './windowStore';
+import { useSplitStore } from './splitStore';
 
 interface TicketState {
   tickets: Ticket[];
@@ -18,7 +19,9 @@ interface TicketState {
   getWaitingCount: () => number;
   getCompletedCount: () => number;
   transferTicket: (ticketId: string, toWindowId: string) => void;
+  bindTube: (ticketId: string, barcode: string, batchNo: string) => void;
   resetTickets: () => void;
+  recalculateQueueLengths: () => void;
 }
 
 export const useTicketStore = create<TicketState>()(
@@ -68,6 +71,14 @@ export const useTicketStore = create<TicketState>()(
 
         const nextTicket = waitingTickets[0];
         const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+        const currentCalling = get().tickets.find(
+          (t) => t.windowId === windowId && t.status === 'calling'
+        );
+
+        if (currentCalling) {
+          useWindowStore.getState().updateQueueLength(windowId, 1);
+        }
 
         set((state) => ({
           tickets: state.tickets.map((t) =>
@@ -123,6 +134,7 @@ export const useTicketStore = create<TicketState>()(
         const ticket = get().tickets.find((t) => t.id === ticketId);
         if (ticket) {
           useWindowStore.getState().setCurrentTicket(ticket.windowId, undefined);
+          useWindowStore.getState().updateQueueLength(ticket.windowId, 0);
         }
 
         set((state) => ({
@@ -130,6 +142,57 @@ export const useTicketStore = create<TicketState>()(
             t.id === ticketId ? { ...t, status: 'skipped' as const } : t
           ),
         }));
+      },
+
+      bindTube: (ticketId, barcode, batchNo) => {
+        const ticket = get().tickets.find((t) => t.id === ticketId);
+        if (!ticket) return;
+
+        const splitStore = useSplitStore.getState();
+        const windowSplits = splitStore.getSplitRecordsByTarget(
+          'window',
+          ticket.windowId
+        );
+
+        const targetSplit = windowSplits.find(
+          (s) => s.batchNo === batchNo && s.remainQuantity > 0
+        );
+
+        if (targetSplit) {
+          useSplitStore.setState({
+            splitRecords: splitStore.splitRecords.map((s) =>
+              s.id === targetSplit.id
+                ? { ...s, remainQuantity: Math.max(0, s.remainQuantity - 1) }
+                : s
+            ),
+          });
+        }
+
+        set((state) => ({
+          tickets: state.tickets.map((t) =>
+            t.id === ticketId
+              ? {
+                  ...t,
+                  tubeBarcodes: [...(t.tubeBarcodes || []), barcode],
+                  tubeBatchNo: batchNo,
+                }
+              : t
+          ),
+        }));
+      },
+
+      recalculateQueueLengths: () => {
+        const windows = useWindowStore.getState().windows;
+        windows.forEach((win) => {
+          const waitingCount = get().tickets.filter(
+            (t) => t.windowId === win.id && t.status === 'waiting'
+          ).length;
+          useWindowStore.setState({
+            windows: useWindowStore.getState().windows.map((w) =>
+              w.id === win.id ? { ...w, queueLength: waitingCount } : w
+            ),
+          });
+        });
       },
 
       getCurrentTicketByWindow: (windowId) => {
